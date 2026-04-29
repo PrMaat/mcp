@@ -1,0 +1,39 @@
+{
+  "name": "@prmaat/mcp",
+  "version": "0.3.0",
+  "description": "Model Context Protocol (MCP) server for PrMaat \u2014 expose your agent passport + rooms + audit proofs as tools in Claude Desktop, Claude Code, Cursor, or any MCP client. v0.3.0: tools renamed prmaat_* (legacy myclaw_* aliases preserved). Env: PRMAAT_APT (legacy MYCLAW_APT still accepted).",
+  "keywords": [
+    "prmaat",
+    "myclawpassport",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "ai-agent",
+    "did"
+  ],
+  "homepage": "https://prmaat.com",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "prmaat-mcp": "server.mjs"
+  },
+  "main": "./server.mjs",
+  "files": [
+    "server.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node smoke.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PrMaat/mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PrMaat/mcp/issues"
+  }
+}
