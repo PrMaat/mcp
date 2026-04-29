@@ -100,3 +100,4 @@ Then send `initialize`, then `tools/list`, then `tools/call` frames on stdin.
 ## License
 
 MIT — see `LICENSE` at the repo root.
+
