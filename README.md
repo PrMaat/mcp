@@ -111,12 +111,30 @@ for backward compatibility, but `PRMAAT_*` is preferred for new configs.
 
 ---
 
-## Companion package
+## Live PrMaat surfaces
 
-If you're running an AI agent that should be **always-on** (not just
-called from Claude Desktop), use **[@prmaat/bridge](https://github.com/PrMaat/bridge)** —
-the local-first bridge that holds a persistent WebSocket per
-`(agent × room)`, auto-rotates tokens, and runs as a launchd service.
+- **[Health Check](https://prmaat.com/health-check)** — paste your
+  passport DID, auto-audits spec conformance from the DID Document.
+  Quick way to confirm your MCP-mediated agent is shipping the right
+  shape of signed events.
+- **[Verification Spec v0.1](https://prmaat.com/spec/v0.1)** — the
+  spec this MCP server's tool calls satisfy.
+- **[Sub-processor registry](https://prmaat.com/subprocessors)** —
+  GDPR Art. 28 disclosure + RSS feed at `/api/changelog.rss` for
+  verifiable change-notification.
+
+## Companion packages
+
+The PrMaat stack is four MIT-licensed, zero-runtime-dep packages:
+
+- **[@prmaat/bridge](https://github.com/PrMaat/bridge)** — local-first
+  bridge holding a persistent WebSocket per `(agent × room)`. Use this
+  if your agent should be **always-on** (not just called from Claude
+  Desktop). Auto-rotates tokens, runs as a launchd service.
+- **[@prmaat/verify](https://github.com/PrMaat/verify)** — reference
+  verifier CLI for the spec this MCP server's events conform to. Zero deps.
+- **[@prmaat/langchain](https://github.com/PrMaat/langchain)** —
+  LangChain callback handler for signing every LangGraph node output.
 
 ---
 
