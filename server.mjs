@@ -38,7 +38,7 @@
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "prmaat-mcp";
-const SERVER_VERSION = "0.3.0";
+const SERVER_VERSION = "0.3.1";
 
 // 2026-04-29: rebrand to PRMAAT_*. Legacy MYCLAW_* still read as a
 // fallback so existing claude_desktop_config.json setups don't break.
@@ -86,6 +86,21 @@ async function apiCall(path, { method = "GET", body = null } = {}) {
   }
   return { ok: true, status: resp.status, data };
 }
+
+// ── Write-tool gate (brain-room verdict 2026-05-08) ─────────────────────────
+// Read tools always exposed. Write tools (post messages, record trust events)
+// are held behind PRMAAT_ENABLE_WRITES=1 because:
+//   • UX/Police/Maat 5-of-5 vote: "ship read-only first; do not let users
+//     discover unfinished product semantics through MCP write paths"
+//   • Trust Profile UI must render the 5 category bars before write tools
+//     have a sane place to surface their effects to operators
+//   • IDE-embedded MCP clients are high-trust attack surfaces; gating writes
+//     gives us time to add per-tool capability scoping (v0.5)
+// To enable writes (opt-in for power users + internal testing):
+//   "env": { "PRMAAT_APT": "...", "PRMAAT_ENABLE_WRITES": "1" }
+const ENABLE_WRITES =
+  String(process.env.PRMAAT_ENABLE_WRITES ?? "").toLowerCase() === "1" ||
+  String(process.env.PRMAAT_ENABLE_WRITES ?? "").toLowerCase() === "true";
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 const TOOLS = [
@@ -163,6 +178,7 @@ const TOOLS = [
     },
   },
   {
+    write: true,
     name: "prmaat_room_post",
     description:
       "Post a chat message to a room on behalf of the authenticated passport. " +
@@ -216,12 +232,92 @@ const TOOLS = [
       return r.ok ? r.data : { error: r.error, status: r.status };
     },
   },
+  // ── v0.3.1 additions (2026-05-08) ────────────────────────────────────────
+  {
+    name: "prmaat_verify_receipt",
+    description:
+      "Verify a v0.2 Verifiable Execution Receipt (JWS Compact, JCS canonicalization, " +
+      "Ed25519). Returns ok:true with subject + payload when the signature, nonce, " +
+      "device-key status, and Merkle inclusion all check out. ok:false with reason " +
+      "when any of those fail. Use this to confirm an agent action actually happened " +
+      "and was signed by the device key declared in the passport's DID document.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jws: { type: "string", description: "The compact JWS receipt string." },
+      },
+      required: ["jws"],
+      additionalProperties: false,
+    },
+    async handler({ jws }) {
+      const r = await apiCall("/verify/receipt", {
+        method: "POST",
+        body: JSON.stringify({ jws }),
+      });
+      return r.ok ? r.data : { error: r.error, status: r.status };
+    },
+  },
+  {
+    name: "prmaat_trust_events",
+    description:
+      "Read the v0.3.1 Governance Trust ledger for a passport — every typed, weighted, " +
+      "signed trust event with attestor, evidence, and forward-hash chain. Returns up " +
+      "to `limit` recent events (default 50, max 200). Public read; no auth required.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subjectDid: { type: "string", description: "DID whose ledger to read" },
+        limit: { type: "number", description: "Max events to return (default 50)" },
+      },
+      required: ["subjectDid"],
+      additionalProperties: false,
+    },
+    async handler({ subjectDid, limit }) {
+      const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+      const r = await apiCall(
+        `/trust-events/by-subject/${encodeURIComponent(subjectDid)}${qs}`,
+      );
+      return r.ok ? r.data : { error: r.error, status: r.status };
+    },
+  },
+  {
+    write: true,
+    name: "prmaat_trust_record",
+    description:
+      "Record a v0.3.1 trust event. Caller's passport (the apt_) becomes the attestor " +
+      "for peer events; for self events (governance.proposal_authored, " +
+      "governance.vote_cast) attestor is forced to caller. Admin-gated events " +
+      "(security.*, penalty.*, attestor.*, isAuto, dissent_validated) require a creator " +
+      "JWT — those will 403 from a passport apt_. Evidence (msg id or URI) is required " +
+      "on positive peer-attested events per spec §13.4 control 5.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        eventType: {
+          type: "string",
+          description:
+            "From the §13.3 taxonomy, e.g. governance.proposal_authored, help.given, " +
+            "invention.idea_credited, audit.witness_validated.",
+        },
+        subjectDid: { type: "string", description: "Whose score changes" },
+        evidenceUri: { type: "string" },
+        evidenceMsgId: { type: "string" },
+        reason: { type: "string" },
+      },
+      required: ["eventType", "subjectDid"],
+      additionalProperties: false,
+    },
+    async handler(args) {
+      const r = await apiCall("/trust-events", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return r.ok ? r.data : { error: r.error, status: r.status };
+    },
+  },
 ];
 
 // ── Legacy myclaw_* aliases (2026-04-29 rebrand backward-compat) ────────────
-// Anyone with claude_desktop_config.json / Cursor MCP setup that calls
-// myclaw_* tool names continues to work. New code should use prmaat_*.
-// Both names register under the same handler.
 for (const t of [...TOOLS]) {
   if (t.name.startsWith("prmaat_")) {
     TOOLS.push({
@@ -231,6 +327,14 @@ for (const t of [...TOOLS]) {
     });
   }
 }
+
+// ── Apply write gate (brain-room 2026-05-08, see ENABLE_WRITES above) ───────
+// Filter the canonical TOOLS array in place; write tools only appear when
+// PRMAAT_ENABLE_WRITES=1. Read tools always available.
+const ALL_TOOLS = TOOLS.slice();
+const ACTIVE_TOOLS = ENABLE_WRITES ? ALL_TOOLS : ALL_TOOLS.filter((t) => !t.write);
+TOOLS.length = 0;
+TOOLS.push(...ACTIVE_TOOLS);
 
 // ── JSON-RPC frame helpers ──────────────────────────────────────────────────
 function sendFrame(obj) {
@@ -324,4 +428,7 @@ process.stdin.on("end", () => {
   process.exit(0);
 });
 
-log(`ready — ${TOOLS.length} tools, base ${BASE}, apt ${APT ? APT.slice(0, 12) + "…" : "UNSET"}`);
+log(
+  `ready — ${TOOLS.length} tools (writes ${ENABLE_WRITES ? "ENABLED" : "gated; set PRMAAT_ENABLE_WRITES=1 to opt in"}), ` +
+    `base ${BASE}, apt ${APT ? APT.slice(0, 12) + "…" : "UNSET"}`,
+);
